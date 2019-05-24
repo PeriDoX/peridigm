@@ -43,6 +43,9 @@
 // Stewart A. Silling    sasilli@sandia.gov
 //
 // ************************************************************************
+//
+// With additions by:
+// Christian Willberg   christan.willberg@dlr.de    Elastic Anisotropic Correspondence Material
 //@HEADER
 
 #include <Teuchos_Assert.hpp>
@@ -62,6 +65,7 @@
 #include "Peridigm_DiffusionMaterial.hpp"
 #include "Peridigm_Pals_Model.hpp"
 #include "Peridigm_LinearLPSPVMaterial.hpp"
+#include "Peridigm_ElasticAnisotropicCorrespondenceMaterial.hpp"
 #ifdef PERIDIGM_PV
   #include "Peridigm_ElasticPVMaterial.hpp"
 #endif
@@ -96,6 +100,8 @@ PeridigmNS::MaterialFactory::create(const Teuchos::ParameterList& materialParams
     materialModel = Teuchos::rcp( new ViscoplasticNeedlemanCorrespondenceMaterial(materialParams) );
   else if (materialModelName == "Isotropic Hardening Correspondence")
     materialModel = Teuchos::rcp( new IsotropicHardeningPlasticCorrespondenceMaterial(materialParams) );
+  else if (materialModelName == "Elastic Anisotropic Correspondence")
+    materialModel = Teuchos::rcp( new ElasticAnisotropicCorrespondenceMaterial(materialParams) );                  
   else if (materialModelName == "LCM")
     materialModel = Teuchos::rcp( new LCMMaterial(materialParams) );
   else if (materialModelName == "Elastic Bond Based")
@@ -132,7 +138,7 @@ PeridigmNS::MaterialFactory::create(const Teuchos::ParameterList& materialParams
   else {
     std::string invalidMaterial("\n**** Unrecognized material model: ");
     invalidMaterial += materialModelName;
-    invalidMaterial += ", must be \"Elastic\" or \"Elastic Plastic\" or \"Elastic Plastic Hardening\" or \"Viscoelastic\" or \"Elastic Correspondence\" or \"LCM\" or \"Vector Poisson\".\n";
+    invalidMaterial += ", must be \"Elastic\" or \"Elastic Plastic\" or \"Elastic Plastic Hardening\" or \"Viscoelastic\" or \"Elastic Correspondence\" or \"LCM\"  or \"Vector Poisson\" or \"Elastic Anisotropic Correspondence\".\n";
     TEUCHOS_TEST_FOR_EXCEPT_MSG(true, invalidMaterial);
   }
 

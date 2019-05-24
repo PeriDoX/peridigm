@@ -43,6 +43,10 @@
 // Stewart A. Silling    sasilli@sandia.gov
 //
 // ************************************************************************
+//
+// Written by
+// Christian Willberg   christan.willberg@dlr.de    Elastic Anisotropic Correspondence Material 
+//
 //@HEADER
 
 #include "elastic_anisotropic_correspondence.h"

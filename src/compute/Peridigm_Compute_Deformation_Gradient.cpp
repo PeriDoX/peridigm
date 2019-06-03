@@ -58,7 +58,8 @@ PeridigmNS::Compute_Deformation_Gradient::Compute_Deformation_Gradient(Teuchos::
   : Compute(params, epetraComm_, computeClassGlobalData_),
     m_volumeFId(-1), m_modelCoordinatesFId(-1), m_coordinatesFId(-1),
     m_shapeTensorInverseFId(-1),
-    m_deformationGradientFId(-1)
+    m_deformationGradientFId(-1),
+    m_bondDamageFieldId(-1)
 {
   FieldManager& fieldManager = FieldManager::self();
   m_volumeFId                = fieldManager.getFieldId(PeridigmField::ELEMENT, PeridigmField::SCALAR, PeridigmField::CONSTANT, "Volume");
@@ -67,13 +68,16 @@ PeridigmNS::Compute_Deformation_Gradient::Compute_Deformation_Gradient(Teuchos::
   m_coordinatesFId           = fieldManager.getFieldId(PeridigmField::NODE,    PeridigmField::VECTOR, PeridigmField::TWO_STEP, "Coordinates");
   m_shapeTensorInverseFId  = fieldManager.getFieldId(PeridigmField::ELEMENT, PeridigmField::FULL_TENSOR, PeridigmField::CONSTANT, "Shape_Tensor_Inverse");
   m_deformationGradientFId = fieldManager.getFieldId(PeridigmField::ELEMENT, PeridigmField::FULL_TENSOR, PeridigmField::CONSTANT, "Deformation_Gradient");
-
+  m_bondDamageFieldId      = fieldManager.getFieldId(PeridigmField::BOND,    PeridigmField::SCALAR, PeridigmField::TWO_STEP, "Bond_Damage");
+  m_detachedNodesFieldId              = fieldManager.getFieldId(PeridigmField::NODE,    PeridigmField::SCALAR, PeridigmField::TWO_STEP, "Detached Nodes");
   m_fieldIds.push_back(m_volumeFId);
   m_fieldIds.push_back(m_horizonFId);
   m_fieldIds.push_back(m_modelCoordinatesFId);
   m_fieldIds.push_back(m_coordinatesFId);
   m_fieldIds.push_back(m_shapeTensorInverseFId);
   m_fieldIds.push_back(m_deformationGradientFId);
+  m_fieldIds.push_back(m_bondDamageFieldId);
+  m_fieldIds.push_back(m_detachedNodesFieldId);
 }
 
 //! Destructor.
@@ -92,27 +96,33 @@ int PeridigmNS::Compute_Deformation_Gradient::compute( Teuchos::RCP< std::vector
     int* const neighborhoodList = neighborhoodData->NeighborhoodList();
     Teuchos::RCP<PeridigmNS::DataManager> dataManager = blockIt->getDataManager();
     
-    double *volume, *horizon, *modelCoordinates, *coordinates, *shapeTensorInverse, *deformationGradient;
+    double *volume, *horizon, *modelCoordinates, *coordinates, *shapeTensorInverse, *deformationGradient, *bondDamage, *detachedNodes;
     dataManager->getData(m_volumeFId, PeridigmField::STEP_NONE)->ExtractView(&volume);
     dataManager->getData(m_horizonFId, PeridigmField::STEP_NONE)->ExtractView(&horizon);
     dataManager->getData(m_modelCoordinatesFId, PeridigmField::STEP_NONE)->ExtractView(&modelCoordinates);
     dataManager->getData(m_coordinatesFId, PeridigmField::STEP_NP1)->ExtractView(&coordinates);
     dataManager->getData(m_shapeTensorInverseFId, PeridigmField::STEP_NONE)->ExtractView(&shapeTensorInverse);
     dataManager->getData(m_deformationGradientFId, PeridigmField::STEP_NONE)->ExtractView(&deformationGradient);
-
+    dataManager->getData(m_bondDamageFieldId, PeridigmField::STEP_NP1)->ExtractView(&bondDamage);
+    dataManager->getData(m_detachedNodesFieldId, PeridigmField::STEP_NP1)->ExtractView(&detachedNodes);
+    bool m_type = false;
+    // for 2D it have to be implemented
     retval = retval || CORRESPONDENCE::computeShapeTensorInverseAndApproximateDeformationGradient(volume,
                                                                                                   horizon,
                                                                                                   modelCoordinates,
                                                                                                   coordinates,
                                                                                                   shapeTensorInverse,
                                                                                                   deformationGradient,
+                                                                                                  bondDamage,
                                                                                                   neighborhoodList,
-                                                                                                  numOwnedPoints);
+                                                                                                  numOwnedPoints,
+                                                                                                  detachedNodes,
+                                                                                                  m_type);
   }
 
   // Warn if retval not zero
   if (retval && epetraComm->MyPID() == 0)
-    std::cout << "**** Warning:  computeApproximateDeformationGradient class returned warning. Some elements may have too few bonds to accurately compute deformation gradient." << std::endl;
+    std::cout << "**** Warning:  computeApproximateDeformationGradient class returned warning. Some elements may have too few bonds to accurately compute deformation gradient. Can be ignored if a 2D problem is calculated" << std::endl;
 
   return(retval);
 }

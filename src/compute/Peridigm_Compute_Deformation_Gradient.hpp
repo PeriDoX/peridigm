@@ -87,6 +87,8 @@ namespace PeridigmNS {
     int m_coordinatesFId;
     int m_shapeTensorInverseFId;
     int m_deformationGradientFId;
+    int m_bondDamageFieldId;
+    int m_detachedNodesFieldId;
   };
 
 }

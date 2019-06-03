@@ -95,6 +95,7 @@ namespace PeridigmNS {
                               const int* ownedIDs,
                               const int* neighborhoodList,
                               PeridigmNS::DataManager& dataManager) const;
+    
 
   protected:
 
@@ -103,6 +104,10 @@ namespace PeridigmNS {
     double m_shearModulus;
     double m_density;
     double m_hourglassCoefficient;
+    double D;
+    int    m_stabilizationType;
+    bool   m_plane = false;
+	bool   nonLin = false;
     PeridigmNS::InfluenceFunction::functionPointer m_OMEGA;
 
     // field spec ids for all relevant data
@@ -123,6 +128,7 @@ namespace PeridigmNS {
     int m_cauchyStressFieldId;
     int m_unrotatedRateOfDeformationFieldId;
     int m_partialStressFieldId;
+    int m_detachedNodesFieldId;
   };
 }
 

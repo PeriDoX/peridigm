@@ -51,6 +51,7 @@
 #include <Teuchos_ScalarTraits.hpp>
 #include <math.h>
 #include <functional>
+#include <boost/math/constants/constants.hpp>
 #include <vector>
 
 namespace CORRESPONDENCE {
@@ -64,7 +65,7 @@ void setOnesOnDiagonalFullTensor(ScalarT* tensor, int numPoints){
       *(tens) = 1.0;
       *(tens+4) = 1.0;
       *(tens+8) = 1.0;
-  };  
+  }  
 }
 
 template<typename ScalarT>
@@ -114,6 +115,52 @@ int Invert3by3Matrix
 
   return returnCode;
 }
+  
+
+template<typename ScalarT>
+int Invert2by2Matrix
+(
+ const ScalarT* matrix,
+ ScalarT& determinant,
+ ScalarT* inverse
+)
+{
+  int returnCode(0);
+  ScalarT a =  *(matrix);
+  ScalarT b =  *(matrix+1);
+  ScalarT c =  *(matrix+3);
+  ScalarT d =  *(matrix+4);
+  
+  
+  determinant = a*d - b*c ;
+
+  if(determinant == ScalarT(0.0)){
+      returnCode = 1;
+      *(inverse)   = 0.0;
+      *(inverse+1) = 0.0;
+      *(inverse+2) = 0.0;
+      *(inverse+3) = 0.0;
+      *(inverse+4) = 0.0;
+      *(inverse+5) = 0.0;
+      *(inverse+6) = 0.0;
+      *(inverse+7) = 0.0;
+      *(inverse+8) = 0.0;
+  }
+  else{
+      *(inverse)   = d/determinant;
+      *(inverse+1) = -1.0 * b/determinant;
+      *(inverse+2) = 0.0;
+      *(inverse+3) = -1.0 * c/determinant;
+      *(inverse+4) = a/determinant;
+      *(inverse+5) = 0.0;
+      *(inverse+6) = 0.0;
+      *(inverse+7) = 0.0;
+      *(inverse+8) = 0.0;
+  }
+    
+  return returnCode;
+}
+
 
 template<typename ScalarT>
 void TransposeMatrix
@@ -221,8 +268,11 @@ const double* modelCoordinates,
 const ScalarT* coordinates,
 ScalarT* shapeTensorInverse,
 ScalarT* deformationGradient,
+const double* bondDamage,
 const int* neighborhoodList,
-int numPoints
+int numPoints,
+const double* detachedNodes,
+const bool type
 )
 {
   int returnCode = 0;
@@ -231,10 +281,11 @@ int numPoints
   const double* modelCoord = modelCoordinates;
   const double* neighborModelCoord;
   const ScalarT* coord = coordinates;
+  
   const ScalarT* neighborCoord;
   ScalarT* shapeTensorInv = shapeTensorInverse;
   ScalarT* defGrad = deformationGradient;
-
+  int bondIndex(0);
   double undeformedBondX, undeformedBondY, undeformedBondZ, undeformedBondLength;
   ScalarT deformedBondX, deformedBondY, deformedBondZ;
   double neighborVolume, omega, temp;
@@ -247,7 +298,7 @@ int numPoints
   ScalarT* defGradFirstTerm = &defGradFirstTermVector[0];
 
   // placeholder for bond damage
-  double bondDamage = 0.0;
+  //double bondDamage = 0.0;
 
   int inversionReturnCode(0);
 
@@ -265,9 +316,13 @@ int numPoints
     *(defGradFirstTerm+6) = 0.0 ; *(defGradFirstTerm+7) = 0.0 ; *(defGradFirstTerm+8) = 0.0 ;
 
     numNeighbors = *neighborListPtr; neighborListPtr++;
-    for(int n=0; n<numNeighbors; n++, neighborListPtr++){
 
+    for(int n=0; n<numNeighbors; n++, neighborListPtr++, bondDamage++){
+      
+      //if (*(detachedNodes+iID) !=0) continue; 
       neighborIndex = *neighborListPtr;
+      if (*(detachedNodes+neighborIndex) !=0) continue; // if completely synchronized it is not needed --> one core 
+
       neighborVolume = volume[neighborIndex];
       neighborModelCoord = modelCoordinates + 3*neighborIndex;
       neighborCoord = coordinates + 3*neighborIndex;
@@ -278,24 +333,28 @@ int numPoints
       undeformedBondLength = sqrt(undeformedBondX*undeformedBondX +
                                   undeformedBondY*undeformedBondY +
                                   undeformedBondZ*undeformedBondZ);
-
+      
       deformedBondX = *(neighborCoord)   - *(coord);
       deformedBondY = *(neighborCoord+1) - *(coord+1);
       deformedBondZ = *(neighborCoord+2) - *(coord+2);
-
+      
       omega = MATERIAL_EVALUATION::scalarInfluenceFunction(undeformedBondLength, *delta);
-
-      temp = (1.0 - bondDamage) * omega * neighborVolume;
-
+      
+      
+      temp = (1.0 - *bondDamage) * omega * neighborVolume;
       *(shapeTensor)   += temp * undeformedBondX * undeformedBondX;
       *(shapeTensor+1) += temp * undeformedBondX * undeformedBondY;
+      
       *(shapeTensor+2) += temp * undeformedBondX * undeformedBondZ;
+      
       *(shapeTensor+3) += temp * undeformedBondY * undeformedBondX;
       *(shapeTensor+4) += temp * undeformedBondY * undeformedBondY;
+      
       *(shapeTensor+5) += temp * undeformedBondY * undeformedBondZ;
       *(shapeTensor+6) += temp * undeformedBondZ * undeformedBondX;
       *(shapeTensor+7) += temp * undeformedBondZ * undeformedBondY;
       *(shapeTensor+8) += temp * undeformedBondZ * undeformedBondZ;
+      
 
       *(defGradFirstTerm)   += temp * deformedBondX * undeformedBondX;
       *(defGradFirstTerm+1) += temp * deformedBondX * undeformedBondY;
@@ -306,15 +365,29 @@ int numPoints
       *(defGradFirstTerm+6) += temp * deformedBondZ * undeformedBondX;
       *(defGradFirstTerm+7) += temp * deformedBondZ * undeformedBondY;
       *(defGradFirstTerm+8) += temp * deformedBondZ * undeformedBondZ;
+
     }
     
-    inversionReturnCode = Invert3by3Matrix(shapeTensor, shapeTensorDeterminant, shapeTensorInv);
-    if(inversionReturnCode > 0)
-      returnCode = inversionReturnCode;
+    if (*(detachedNodes+iID) == 0) {
+        
+        if (type==true){
+			inversionReturnCode = Invert2by2Matrix(shapeTensor, shapeTensorDeterminant, shapeTensorInv);
 
+		}
+		else{
+			inversionReturnCode = Invert3by3Matrix(shapeTensor, shapeTensorDeterminant, shapeTensorInv);
+		}
+			
+        MatrixMultiply(false, false, 1.0, defGradFirstTerm, shapeTensorInv, defGrad);
+
+        if(inversionReturnCode > 0){
+           returnCode = inversionReturnCode;
+           
+           }
+        }
     // Matrix multiply the first term and the shape tensor inverse to compute
     // the deformation gradient
-    MatrixMultiply(false, false, 1.0, defGradFirstTerm, shapeTensorInv, defGrad);
+    
   }
 
   return returnCode;
@@ -328,16 +401,19 @@ const double* volume,
 const double* horizon,
 const double* modelCoordinates,
 const ScalarT* velocities,
-const ScalarT* deformationGradient,
+ScalarT* deformationGradient,
 const ScalarT* shapeTensorInverse,
-const ScalarT* leftStretchTensorN,
+ScalarT* leftStretchTensorN,
 const ScalarT* rotationTensorN,
 ScalarT* leftStretchTensorNP1,
 ScalarT* rotationTensorNP1,
 ScalarT* unrotatedRateOfDeformation,
 const int* neighborhoodList,
 int numPoints,
-double dt
+double dt,
+const double* bondDamage,
+const double* detachedNodes,
+const bool type
 )
 {
   int returnCode = 0;
@@ -347,9 +423,9 @@ double dt
   const double* neighborModelCoord;
   const ScalarT* vel = velocities;
   const ScalarT* neighborVel;
-  const ScalarT* defGrad = deformationGradient;
+  ScalarT* defGrad = deformationGradient;
   const ScalarT* shapeTensorInv = shapeTensorInverse;
-  const ScalarT* leftStretchN = leftStretchTensorN;
+  ScalarT* leftStretchN = leftStretchTensorN;
   const ScalarT* rotTensorN = rotationTensorN;
 
   ScalarT* leftStretchNP1 = leftStretchTensorNP1;
@@ -380,9 +456,9 @@ double dt
   double undeformedBondX, undeformedBondY, undeformedBondZ, undeformedBondLength;
   double neighborVolume, omega, scalarTemp; 
   int inversionReturnCode(0);
-
+  
   // placeholder for bond damage
-  double bondDamage = 0.0;
+ // double bondDamage = 0.0;
 
   int neighborIndex, numNeighbors;
   const int *neighborListPtr = neighborhoodList;
@@ -397,9 +473,12 @@ double dt
     
     //Compute Fdot
     numNeighbors = *neighborListPtr; neighborListPtr++;
+    
     for(int n=0; n<numNeighbors; n++, neighborListPtr++){
-
       neighborIndex = *neighborListPtr;
+      if (*(detachedNodes+iID)!=0) continue;
+     // if (*(detachedNodes+neighborIndex)!=0) continue;
+
       neighborVolume = volume[neighborIndex];
       neighborModelCoord = modelCoordinates + 3*neighborIndex;
       neighborVel = velocities + 3*neighborIndex;
@@ -419,8 +498,8 @@ double dt
 
       omega = MATERIAL_EVALUATION::scalarInfluenceFunction(undeformedBondLength, *delta);
 
-      scalarTemp = (1.0 - bondDamage) * omega * neighborVolume;
-
+      scalarTemp = (1.0 - *bondDamage) * omega * neighborVolume;
+     // scalarTemp =  omega * neighborVolume;
       *(FdotFirstTerm)   += scalarTemp * velStateX * undeformedBondX;
       *(FdotFirstTerm+1) += scalarTemp * velStateX * undeformedBondY;
       *(FdotFirstTerm+2) += scalarTemp * velStateX * undeformedBondZ;
@@ -431,15 +510,21 @@ double dt
       *(FdotFirstTerm+7) += scalarTemp * velStateZ * undeformedBondY;
       *(FdotFirstTerm+8) += scalarTemp * velStateZ * undeformedBondZ;
     }
-
+    if (*(detachedNodes+iID)!=0) continue;
     // Compute Fdot
     MatrixMultiply(false, false, 1.0, FdotFirstTerm, shapeTensorInv, Fdot);
 
     // Compute the inverse of the deformation gradient, Finverse
-    inversionReturnCode = Invert3by3Matrix(defGrad, determinant, Finverse);
-    if(inversionReturnCode > 0)
-      returnCode = inversionReturnCode;
-
+    if (type==true){
+		inversionReturnCode = Invert2by2Matrix(defGrad, determinant, Finverse);
+	}
+	else{
+		inversionReturnCode = Invert3by3Matrix(defGrad, determinant, Finverse);
+		}
+    if(inversionReturnCode > 0){
+        returnCode = 2;
+        return returnCode;
+    }
     // Compute the Eulerian velocity gradient L = Fdot * Finv
     MatrixMultiply(false, false, 1.0, Fdot, Finverse, eulerianVelGrad);
 
@@ -505,9 +590,15 @@ double dt
     *(temp+8) = traceV - *(leftStretchN+8);
 
     // Compute the inverse of the temp matrix
-    Invert3by3Matrix(temp, determinant, tempInv);
-    if(inversionReturnCode > 0)
+    if (type==true){
+		inversionReturnCode = Invert2by2Matrix(temp, determinant, tempInv);
+	}
+	else{
+		inversionReturnCode = Invert3by3Matrix(temp, determinant, tempInv);
+		}
+    if(inversionReturnCode > 0){
       returnCode = inversionReturnCode;
+      return returnCode;}
 
     //Find omega vector, i.e. \omega = w +  (trace(V) I - V)^(-1) * z (T&F Eq. 12)
     omegaX =  wX + *(tempInv)   * zX + *(tempInv+1) * zY + *(tempInv+2) * zZ;
@@ -588,6 +679,9 @@ double dt
   return returnCode;
 }
 
+
+
+
 template<typename ScalarT>
 void computeGreenLagrangeStrain
 (
@@ -665,7 +759,8 @@ ScalarT* hourglassForceDensity,
 const int* neighborhoodList,
 int numPoints,
 double bulkModulus,
-double hourglassCoefficient
+double hourglassCoefficient,
+const double* bondDamage
 )
 {
   double vol, neighborVol;
@@ -675,9 +770,7 @@ double hourglassCoefficient
   ScalarT hourglassVectorX, hourglassVectorY, hourglassVectorZ;
   ScalarT dot, magnitude;
   int neighborIndex, numNeighbors;
-
   const ScalarT* defGrad = deformationGradient;
-
   const double* delta = horizon;
   const double* modelCoord = modelCoordinates;
   const double* neighborModelCoord;
@@ -687,9 +780,9 @@ double hourglassCoefficient
   ScalarT* neighborHourglassForceDensityPtr;
 
   // placeholder for inclusion of bond damage
-  double bondDamage = 0.0;
+  //double bondDamage = 0.0;
 
-  const double pi = PeridigmNS::value_of_pi();
+  const double pi = boost::math::constants::pi<double>();
   double firstPartOfConstant = 18.0*hourglassCoefficient*bulkModulus/pi;
   double constant;
 
@@ -700,7 +793,7 @@ double hourglassCoefficient
     constant = firstPartOfConstant/( (*delta)*(*delta)*(*delta)*(*delta) );
 
     numNeighbors = *neighborListPtr; neighborListPtr++;
-    for(int n=0; n<numNeighbors; n++, neighborListPtr++){
+    for(int n=0; n<numNeighbors; n++, neighborListPtr++, bondDamage++){
       neighborIndex = *neighborListPtr;
       neighborModelCoord = modelCoordinates + 3*neighborIndex;
       neighborCoord = coordinates + 3*neighborIndex;
@@ -739,7 +832,7 @@ double hourglassCoefficient
       dot = hourglassVectorX*deformedBondX + hourglassVectorY*deformedBondY + hourglassVectorZ*deformedBondZ;
       dot *= -1.0;
 
-      magnitude = (1.0-bondDamage) * constant * (dot/undeformedBondLength) * (1.0/deformedBondLength);
+      magnitude = (1.0-*bondDamage) * constant * (dot/undeformedBondLength) * (1.0/deformedBondLength);
 
       vol = volume[iID];
       neighborVol = volume[neighborIndex];
@@ -748,12 +841,151 @@ double hourglassCoefficient
       *(hourglassForceDensityPtr)   += magnitude * deformedBondX * neighborVol;
       *(hourglassForceDensityPtr+1) += magnitude * deformedBondY * neighborVol;
       *(hourglassForceDensityPtr+2) += magnitude * deformedBondZ * neighborVol;
+
       *(neighborHourglassForceDensityPtr)   -= magnitude * deformedBondX * vol;
       *(neighborHourglassForceDensityPtr+1) -= magnitude * deformedBondY * vol;
       *(neighborHourglassForceDensityPtr+2) -= magnitude * deformedBondZ * vol;
+
     }
   }
 }
+
+
+
+template<typename ScalarT>
+void computeCorrespondenceStabilityForce
+(
+const double* volume,
+const double* horizon,
+const double* modelCoordinates,
+const ScalarT* coordinates,
+const ScalarT* deformationGradient,
+ScalarT* hourglassForceDensity,
+const int* neighborhoodList,
+int numPoints,
+double bulkModulus,
+double hourglassCoefficient,
+const double* bondDamage
+)
+{
+  // S.A. Silling, "Stability of peridynamic correspondence material models and their
+ // particle discretizations" in Comput. Methods Appl. Mech. Engrg. 322 (2017) 42–57,http://dx.doi.org/10.1016/j.cma.2017.03.043
+
+  double undeformedBondX, undeformedBondY, undeformedBondZ, undeformedBondLength;
+  ScalarT deformedBondX, deformedBondY, deformedBondZ, deformedBondLength;
+  ScalarT  magnitude;
+  int neighborIndex, numNeighbors;
+  const ScalarT* defGrad = deformationGradient;
+  const double* delta1 = horizon;
+  const double* delta2 = horizon;
+  const double* modelCoord1 = modelCoordinates;
+  const double* modelCoord2 = modelCoordinates;
+  const double* neighborModelCoord;
+  //const ScalarT* coord1 = coordinates;
+  const ScalarT* coord2 = coordinates;
+  const double* bondDamage1 = bondDamage;
+  const double* bondDamage2 = bondDamage;
+  double nonUniformDeformState[3], m_omega;
+  ScalarT FxsiX, FxsiY, FxsiZ;
+  const ScalarT* neighborCoord;
+  double vol, neighborVol;
+  ScalarT* hourglassForceDensityPtr = hourglassForceDensity;
+  ScalarT* neighborHourglassForceDensityPtr;
+
+  // placeholder for inclusion of bond damage
+  //double bondDamage = 0.0;
+
+  const double pi = boost::math::constants::pi<double>();
+  double firstPartOfConstant = 18.0*hourglassCoefficient*bulkModulus/pi;
+  double constant;
+  double omega0 = 0.0, omega2=0.0;
+  const int *neighborListPtr1 = neighborhoodList;
+  const int *neighborListPtr2 = neighborhoodList;
+  
+  for(int iID=0 ; iID<numPoints ; ++iID, delta1++, modelCoord1+=3){
+
+    numNeighbors = *neighborListPtr1; neighborListPtr1++;
+
+    for(int n=0; n<numNeighbors; n++, neighborListPtr1++, bondDamage1++){
+      neighborIndex = *neighborListPtr1;
+      neighborModelCoord = modelCoordinates + 3*neighborIndex;
+      
+      undeformedBondX = *(neighborModelCoord)   - *(modelCoord1);
+      undeformedBondY = *(neighborModelCoord+1) - *(modelCoord1+1);
+      undeformedBondZ = *(neighborModelCoord+2) - *(modelCoord1+2);
+      undeformedBondLength = sqrt(undeformedBondX*undeformedBondX +
+                                  undeformedBondY*undeformedBondY +
+                                  undeformedBondZ*undeformedBondZ);
+      m_omega = MATERIAL_EVALUATION::scalarInfluenceFunction(undeformedBondLength, *delta1);
+      neighborVol = volume[neighborIndex];
+      omega0 += (1-*bondDamage1)*m_omega;
+      
+    }
+  }
+omega0 = 1;
+  
+  for(int iID=0 ; iID<numPoints ; ++iID, delta2++, modelCoord2+=3, coord2+=3,
+        defGrad+=9, hourglassForceDensityPtr+=3){
+    constant = firstPartOfConstant/( omega0 * *(delta2)* *(delta2)* *(delta2)* *(delta2)* *(delta2) );
+    numNeighbors = *neighborListPtr2; neighborListPtr2++;
+
+    for(int n=0; n<numNeighbors; n++, neighborListPtr2++, bondDamage2++){
+      neighborIndex = *neighborListPtr2;
+      neighborModelCoord = modelCoordinates + 3*neighborIndex;
+      neighborCoord = coordinates + 3*neighborIndex;
+
+      undeformedBondX = *(neighborModelCoord)   - *(modelCoord2);
+      undeformedBondY = *(neighborModelCoord+1) - *(modelCoord2+1);
+      undeformedBondZ = *(neighborModelCoord+2) - *(modelCoord2+2);
+      undeformedBondLength = sqrt(undeformedBondX*undeformedBondX +
+                                  undeformedBondY*undeformedBondY +
+                                  undeformedBondZ*undeformedBondZ);
+      m_omega = MATERIAL_EVALUATION::scalarInfluenceFunction(undeformedBondLength, *delta2);
+      
+      
+      
+      deformedBondX = *(neighborCoord)   - *(coord2);
+      deformedBondY = *(neighborCoord+1) - *(coord2+1);
+      deformedBondZ = *(neighborCoord+2) - *(coord2+2);
+      //deformedBondLength = sqrt(deformedBondX*deformedBondX +
+      //                        deformedBondY*deformedBondY +
+      //                        deformedBondZ*deformedBondZ);
+
+      FxsiX = 
+        *(defGrad)   * undeformedBondX +
+        *(defGrad+1) * undeformedBondY +
+        *(defGrad+2) * undeformedBondZ;
+      FxsiY = 
+        *(defGrad+3) * undeformedBondX +
+        *(defGrad+4) * undeformedBondY +
+        *(defGrad+5) * undeformedBondZ;
+      FxsiZ = 
+        *(defGrad+6) * undeformedBondX +
+        *(defGrad+7) * undeformedBondY +
+        *(defGrad+8) * undeformedBondZ;
+
+      nonUniformDeformState[0] = deformedBondX - FxsiX;
+      nonUniformDeformState[1] = deformedBondY - FxsiY;
+      nonUniformDeformState[2] = deformedBondZ - FxsiZ;
+
+      magnitude = (1.0-*bondDamage2) * constant * m_omega;
+
+      vol = volume[iID];
+      neighborVol = volume[neighborIndex];
+      neighborHourglassForceDensityPtr = hourglassForceDensity + 3*neighborIndex;
+
+      *(hourglassForceDensityPtr)   += magnitude * nonUniformDeformState[0] * neighborVol;
+      *(hourglassForceDensityPtr+1) += magnitude * nonUniformDeformState[1] * neighborVol;
+      *(hourglassForceDensityPtr+2) += magnitude * nonUniformDeformState[2] * neighborVol;
+
+      *(neighborHourglassForceDensityPtr)   -= magnitude * nonUniformDeformState[0] * vol;
+      *(neighborHourglassForceDensityPtr+1) -= magnitude * nonUniformDeformState[1] * vol;
+      *(neighborHourglassForceDensityPtr+2) -= magnitude * nonUniformDeformState[2] * vol;
+
+    }
+  }
+}
+
 
 template<typename ScalarT>
 void rotateCauchyStress
@@ -779,6 +1011,49 @@ void rotateCauchyStress
   }
 }
 
+template<typename ScalarT>
+void setValuesForDetachedNodes
+(
+ ScalarT* deformationGradient,
+ ScalarT* leftStretchTensor,
+ ScalarT* rotationTensor,
+ ScalarT* unrotatedRateOfDeformation,
+ ScalarT* shapeTensorInverse,
+ const double* detachedNodes,
+ const int numPoints
+ // set all matrices to values which does not make any problems later on
+ // the detached nodes are not considerred
+ )
+{
+    for(int iID=0 ; iID<numPoints ; ++iID,  unrotatedRateOfDeformation+=9,  deformationGradient+=9, leftStretchTensor+=9, rotationTensor+=9, ++detachedNodes){ 
+       
+        if (*detachedNodes!=0){
+            
+          for (int i=0; i<9; ++i){
+            *(unrotatedRateOfDeformation+i) = 0.0;
+            *(deformationGradient+i) = 0.0;
+            *(leftStretchTensor+i) = 0.0;
+            *(rotationTensor+i) = 0.0;
+            *(shapeTensorInverse+i)=0.0;
+
+            }
+            *(deformationGradient) = 1.0;
+            *(deformationGradient+4) = 1.0;
+            *(deformationGradient+8) = 1.0;
+            *(leftStretchTensor) = 1.0;
+            *(leftStretchTensor+4) = 1.0;
+            *(leftStretchTensor+8) = 1.0;
+            *(rotationTensor) = 1.0;
+            *(rotationTensor+4) = 1.0;
+            *(rotationTensor+8) = 1.0;
+            *(shapeTensorInverse) = 1.0;
+            *(shapeTensorInverse+4) = 1.0;
+            *(shapeTensorInverse+8) = 1.0;
+
+        }
+  }
+
+}
 
 /** Explicit template instantiation for double. */
 
@@ -812,7 +1087,12 @@ template int Invert3by3Matrix<double>
  double& determinant,
  double* inverse
 );
-
+template int Invert2by2Matrix<double>
+(
+ const double* matrix,
+ double& determinant,
+ double* inverse
+);
 template int computeShapeTensorInverseAndApproximateDeformationGradient<double>
 (
 const double* volume,
@@ -821,8 +1101,11 @@ const double* modelCoordinates,
 const double* coordinates,
 double* shapeTensorInverse,
 double* deformationGradient,
+const double* bondDamage,
 const int* neighborhoodList,
-int numPoints
+int numPoints,
+const double* detachedNodes,
+const bool type
 );
 
 template int computeUnrotatedRateOfDeformationAndRotationTensor<double>
@@ -831,17 +1114,21 @@ const double* volume,
 const double* horizon,
 const double* modelCoordinates,
 const double* velocities,
-const double* deformationGradient,
+double* deformationGradient,
 const double* shapeTensorInverse,
-const double* leftStretchTensorN,
+double* leftStretchTensorN,
 const double* rotationTensorN,
 double* leftStretchTensorNP1,
 double* rotationTensorNP1,
 double* unrotatedRateOfDeformation,
 const int* neighborhoodList,
 int numPoints,
-double dt
+double dt,
+const double* bondDamage,
+const double* detachedNodes,
+const bool type
 );
+
 
 template void computeGreenLagrangeStrain<double>
 (
@@ -877,8 +1164,39 @@ double* hourglassForceDensity,
 const int* neighborhoodList,
 int numPoints,
 double bulkModulus,
-double hourglassCoefficient
+double hourglassCoefficient,
+const double* bondDamage
 );
+
+template void computeCorrespondenceStabilityForce<double>
+(
+const double* volume,
+const double* horizon,
+const double* modelCoordinates,
+const double* coordinates,
+const double* deformationGradient,
+double* hourglassForceDensity,
+const int* neighborhoodList,
+int numPoints,
+double bulkModulus,
+double hourglassCoefficient,
+const double* bondDamage
+);
+
+
+
+
+template void setValuesForDetachedNodes<double>
+(
+ double* deformationGradient,
+ double* leftStretchTensor,
+ double* rotationTensor,
+ double* unrotatedRateOfDeformation,
+ double* shapeTensorInverse,
+ const double* detachedNodes,
+ const int numPoints
+ );
+
 
 template void setOnesOnDiagonalFullTensor<double>
 (
@@ -907,6 +1225,13 @@ template void MatrixMultiply<Sacado::Fad::DFad<double> >
 );
 
 template int Invert3by3Matrix<Sacado::Fad::DFad<double> >
+(
+ const Sacado::Fad::DFad<double>* matrix,
+ Sacado::Fad::DFad<double>& determinant,
+ Sacado::Fad::DFad<double>* inverse
+);
+
+template int Invert2by2Matrix<Sacado::Fad::DFad<double> >
 (
  const Sacado::Fad::DFad<double>* matrix,
  Sacado::Fad::DFad<double>& determinant,

@@ -58,7 +58,14 @@ int Invert3by3Matrix
  ScalarT& determinant,
  ScalarT* inverse
 );
-
+//! Invert a single 2-by-2 matrix; returns zero of successful, one if not successful (e.g., singular matrix).
+template<typename ScalarT>
+int Invert2by2Matrix
+(
+ const ScalarT* matrix,
+ ScalarT& determinant,
+ ScalarT* inverse
+);
 //! Transpose matrix; if both arguments are the same pointer then the matrix is transposed in place.
 template<typename ScalarT>
 void TransposeMatrix
@@ -97,8 +104,11 @@ const double* modelCoordinates,
 const ScalarT* coordinates,
 ScalarT* shapeTensorInverse,
 ScalarT* deformationGradient,
+const double* bondDamage,
 const int* neighborhoodList,
-int numPoints
+int numPoints,
+const double* detachedNodes,
+const bool type
 );
 
 // Calculation of stretch rates following Flanagan & Taylor
@@ -108,17 +118,21 @@ const double* volume,
 const double* horizon,
 const double* modelCoordinates,
 const ScalarT* velocities,
-const ScalarT* deformationGradient,
+ScalarT* deformationGradient,
 const ScalarT* shapeTensorInverse,
-const ScalarT* leftStretchTensorN,
+ScalarT* leftStretchTensorN,
 const ScalarT* rotationTensorN,
 ScalarT* leftStretchTensorNP1,
 ScalarT* rotationTensorNP1,
 ScalarT* unrotatedRateOfDeformation,
 const int* neighborhoodList,
 int numPoints,
-double dt
+double dt,
+const double* bondDamage,
+const double* detachedNodes,
+const bool type
 );
+
 
 //! Green-Lagrange Strain E = 0.5*(F^T F - I).
 template<typename ScalarT>
@@ -157,8 +171,38 @@ ScalarT* hourglassForceDensity,
 const int* neighborhoodList,
 int numPoints,
 double bulkModulus,
-double hourglassCoefficient
+double hourglassCoefficient,
+const double* bondDamage
 );
+
+template<typename ScalarT>
+void computeCorrespondenceStabilityForce
+(
+const double* volume,
+const double* horizon,
+const double* modelCoordinates,
+const ScalarT* coordinates,
+const ScalarT* deformationGradient,
+ScalarT* hourglassForceDensity,
+const int* neighborhoodList,
+int numPoints,
+double bulkModulus,
+double hourglassCoefficient,
+const double* bondDamage
+);
+
+template<typename ScalarT>
+void setValuesForDetachedNodes
+(
+ ScalarT* deformationGradient,
+ ScalarT* leftStretchTensor,
+ ScalarT* rotationTensor,
+ ScalarT* unrotatedRateOfDeformation,
+ ScalarT* shapeTensorInverse,
+ const double* detachedNodes,
+ const int numPoints
+ );
+
 
 template<typename ScalarT>
 void setOnesOnDiagonalFullTensor(ScalarT* tensor, int numPoints);

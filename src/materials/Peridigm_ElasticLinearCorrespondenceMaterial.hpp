@@ -1,4 +1,4 @@
-//! \file elastic_correspondence.h
+//! \file Peridigm_ElasticLinearCorrespondenceMaterial.hpp
 
 //@HEADER
 // ************************************************************************
@@ -44,37 +44,45 @@
 //
 // ************************************************************************
 //@HEADER
-#ifndef ELASTIC_CORRESPONDENCE_H
-#define ELASTIC_CORRESPONDENCE_H
 
-namespace CORRESPONDENCE {
+#ifndef PERIDIGM_ELASTICLINEARCORRESPONDENCEMATERIAL_HPP
+#define PERIDIGM_ELASTICLINEARCORRESPONDENCEMATERIAL_HPP
 
-template<typename ScalarT>
-void updateElasticCauchyStress
-(
-const ScalarT* unrotatedRateOfDeformation, 
-const ScalarT* unrotatedCauchyStressN, 
-ScalarT* unrotatedCauchyStressNP1, 
-const int numPoints, 
-const double bulkMod,
-const double shearMod,
-const double dt
-);
+#include "Peridigm_CorrespondenceMaterial.hpp"
 
-template<typename ScalarT>
-void updateElasticCauchyStressSmallDef
-(
-const ScalarT* DeformationGradient, 
-const ScalarT* unrotatedCauchyStressN, 
-ScalarT* unrotatedCauchyStressNP1, 
-const int numPoints, 
-const double bulkMod,
-const double shearMod,
-const double* C,
-const int type,
-const double dt
-);
+namespace PeridigmNS {
 
+  class ElasticLinearCorrespondenceMaterial : public CorrespondenceMaterial{
+  public:
+
+	//! Constructor.
+    ElasticLinearCorrespondenceMaterial(const Teuchos::ParameterList & params);
+
+    //! Destructor.
+    virtual ~ElasticLinearCorrespondenceMaterial();
+
+    //! Return name of material type
+    virtual std::string Name() const { return("Linear Elastic Correspondence"); }
+
+    //! Evaluate the Cauchy stress. --> call from Peridigm_CorrespondenceMaterial.cpp
+    virtual void computeCauchyStress(const double dt,
+                                     const int numOwnedPoints,
+                                     PeridigmNS::DataManager& dataManager) const;
+
+    //! Returns the requested material property
+    //! A dummy method here.
+    virtual double lookupMaterialProperty(const std::string keyname) const {return 0.0;}
+
+
+  protected:
+
+    // field spec ids for all relevant data
+    double C[36];
+    int m_type;
+    int m_unrotatedRateOfDeformationFieldId;
+    int m_unrotatedCauchyStressFieldId;
+    int m_deformationGradientFieldId;
+  };
 }
 
-#endif // ELASTIC_CORRESPONDENCE_H
+#endif // PERIDIGM_ELASTICLINEARCORRESPONDENCEMATERIAL_HPP

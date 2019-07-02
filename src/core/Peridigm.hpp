@@ -503,7 +503,8 @@ namespace PeridigmNS {
 
     //! Global vector for temperature change
     Teuchos::RCP<Epetra_Vector> deltaTemperature;
-
+    //! Global vector for damage model data
+    Teuchos::RCP<Epetra_Vector> damageModelVal;
     //! Global vector for concentration
     Teuchos::RCP<Epetra_Vector> concentration;
 
@@ -630,6 +631,7 @@ namespace PeridigmNS {
     int forceDensityFieldId;
     int contactForceDensityFieldId;
     int externalForceDensityFieldId;
+    int damageModelFieldId;
     int partialVolumeFieldId;
 
     // multiphyics information

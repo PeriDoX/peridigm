@@ -80,6 +80,8 @@ namespace PeridigmNS {
     //! Jacobian evaluation that acts directly on the workset
     void evalJacobian(Teuchos::RCP<Workset> workset) const;
 
+    //! Dilatation determined directly on the workset
+    void updateDilatation(Teuchos::RCP<Workset> workset) const;
   private:
 
     //! Private to prohibit copying

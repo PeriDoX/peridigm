@@ -158,3 +158,34 @@ PeridigmNS::ModelEvaluator::evalJacobian(Teuchos::RCP<Workset> workset) const
                                    jacobianType);
   }
 }
+void 
+PeridigmNS::ModelEvaluator::updateDilatation(Teuchos::RCP<Workset> workset) const
+{
+
+  std::vector<PeridigmNS::Block>::iterator blockIt;
+
+  // All blocks, because nodes outside the block definition are needed for the interface bond calculations  
+  // what if no damage is included in a block
+  // test 
+  const double dt = workset->timeStep;
+  for(blockIt = workset->blocks->begin() ; blockIt != workset->blocks->end() ; blockIt++){
+
+    Teuchos::RCP<PeridigmNS::NeighborhoodData> neighborhoodData = blockIt->getNeighborhoodData();
+    const int numOwnedPoints = neighborhoodData->NumOwnedPoints();
+    const int* ownedIDs = neighborhoodData->OwnedIDs();
+    const int* neighborhoodList = neighborhoodData->NeighborhoodList();
+    Teuchos::RCP<PeridigmNS::DataManager> dataManager = blockIt->getDataManager();
+    Teuchos::RCP<const PeridigmNS::Material> materialModel = blockIt->getMaterialModel();
+    
+    if (materialModel->Name() == "Elastic"){
+        
+        materialModel->evalDilatation(dt, 
+                                numOwnedPoints,
+                                ownedIDs,
+                                neighborhoodList,
+                                *dataManager);
+    
+    }
+  }
+}
+

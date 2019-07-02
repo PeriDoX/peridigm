@@ -195,6 +195,16 @@ namespace PeridigmNS {
 
     enum FiniteDifferenceScheme { FORWARD_DIFFERENCE=0, CENTRAL_DIFFERENCE=1 };
 
+    // computeDilatation is needed as function to update the dilatation before the damage routine
+    // this is needed to guarantee the correct deformation for the damage evaluation
+    
+    
+    virtual void
+    evalDilatation(const double dt,
+                 const int numOwnedPoints,
+                 const int* ownedIDs,
+                 const int* neighborhoodList,
+                 PeridigmNS::DataManager& dataManager)  const {}
   protected:
 
     //! Evaluate the jacobian via finite difference (probing)

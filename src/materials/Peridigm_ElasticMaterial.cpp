@@ -48,11 +48,14 @@
 #include "Peridigm_ElasticMaterial.hpp"
 #include "Peridigm_Field.hpp"
 #include "elastic.h"
+#ifdef PERIDIGM_KOKKOS
+  #include "elastic_kokkos.h"
+#endif
 #include "material_utilities.h"
 #include <Teuchos_Assert.hpp>
 #include <Epetra_SerialComm.h>
 #include <Sacado.hpp>
-#include <cmath>
+#include <boost/math/special_functions/fpclassify.hpp>
 
 using namespace std;
 
@@ -65,7 +68,7 @@ PeridigmNS::ElasticMaterial::ElasticMaterial(const Teuchos::ParameterList& param
     m_OMEGA(PeridigmNS::InfluenceFunction::self().getInfluenceFunction()),
     m_volumeFieldId(-1), m_damageFieldId(-1), m_weightedVolumeFieldId(-1), m_dilatationFieldId(-1), m_modelCoordinatesFieldId(-1),
     m_coordinatesFieldId(-1), m_forceDensityFieldId(-1), m_partialStressFieldId(-1), m_bondDamageFieldId(-1),
-    m_temperatureFieldId(-1), m_deltaTemperatureFieldId(-1)
+    m_deltaTemperatureFieldId(-1), m_planeStrain(false), m_planeStress(false), m_damageModelFieldId(-1)
 {
   //! \todo Add meaningful asserts on material properties.
   m_bulkModulus = calculateBulkModulus(params);
@@ -74,6 +77,10 @@ PeridigmNS::ElasticMaterial::ElasticMaterial(const Teuchos::ParameterList& param
   m_horizon = params.get<double>("Horizon");
   if(params.isParameter("Apply Automatic Differentiation Jacobian"))
     m_applyAutomaticDifferentiationJacobian = params.get<bool>("Apply Automatic Differentiation Jacobian");
+  if(params.isParameter("Plane Stress"))
+    m_planeStress = params.get<bool>("Plane Stress");
+  if(params.isParameter("Plane Strain"))
+    m_planeStrain = params.get<bool>("Plane Strain");
 
   if(params.isParameter("Thermal Expansion Coefficient")){
     m_alpha = params.get<double>("Thermal Expansion Coefficient");
@@ -92,13 +99,13 @@ PeridigmNS::ElasticMaterial::ElasticMaterial(const Teuchos::ParameterList& param
   m_coordinatesFieldId             = fieldManager.getFieldId(PeridigmField::NODE,    PeridigmField::VECTOR,      PeridigmField::TWO_STEP, "Coordinates");
   m_forceDensityFieldId            = fieldManager.getFieldId(PeridigmField::NODE,    PeridigmField::VECTOR,      PeridigmField::TWO_STEP, "Force_Density");
   m_bondDamageFieldId              = fieldManager.getFieldId(PeridigmField::BOND,    PeridigmField::SCALAR,      PeridigmField::TWO_STEP, "Bond_Damage");
-  if(m_applyThermalStrains){
-    m_temperatureFieldId           = fieldManager.getFieldId(PeridigmField::NODE,    PeridigmField::SCALAR,      PeridigmField::TWO_STEP, "Temperature");
+  int m_horizonFieldId             = fieldManager.getFieldId(PeridigmField::ELEMENT, PeridigmField::SCALAR, PeridigmField::CONSTANT, "Horizon");
+  m_damageModelFieldId = fieldManager.getFieldId(PeridigmNS::PeridigmField::NODE, PeridigmNS::PeridigmField::VECTOR, PeridigmNS::PeridigmField::TWO_STEP, "Damage_Model_Data");
+     
+  if(m_applyThermalStrains)
     m_deltaTemperatureFieldId      = fieldManager.getFieldId(PeridigmField::NODE,    PeridigmField::SCALAR,      PeridigmField::TWO_STEP, "Temperature_Change");
-  }
-  if(m_computePartialStress){
+  if(m_computePartialStress)
     m_partialStressFieldId         = fieldManager.getFieldId(PeridigmField::ELEMENT, PeridigmField::FULL_TENSOR, PeridigmField::TWO_STEP, "Partial_Stress");
-  }
 
   m_fieldIds.push_back(m_volumeFieldId);
   m_fieldIds.push_back(m_damageFieldId);
@@ -108,13 +115,12 @@ PeridigmNS::ElasticMaterial::ElasticMaterial(const Teuchos::ParameterList& param
   m_fieldIds.push_back(m_coordinatesFieldId);
   m_fieldIds.push_back(m_forceDensityFieldId);
   m_fieldIds.push_back(m_bondDamageFieldId);
-  if(m_applyThermalStrains){
+  m_fieldIds.push_back(m_horizonFieldId);
+  m_fieldIds.push_back(m_damageModelFieldId);
+  if(m_applyThermalStrains)
     m_fieldIds.push_back(m_deltaTemperatureFieldId);
-    m_fieldIds.push_back(m_temperatureFieldId);
-  }
-  if(m_computePartialStress){
+  if(m_computePartialStress)
     m_fieldIds.push_back(m_partialStressFieldId);
-  }
 }
 
 PeridigmNS::ElasticMaterial::~ElasticMaterial()
@@ -135,6 +141,7 @@ PeridigmNS::ElasticMaterial::initialize(const double dt,
   dataManager.getData(m_weightedVolumeFieldId, PeridigmField::STEP_NONE)->ExtractView(&weightedVolume);
 
   MATERIAL_EVALUATION::computeWeightedVolume(xOverlap,cellVolumeOverlap,weightedVolume,numOwnedPoints,neighborhoodList,m_horizon);
+  
 
 }
 
@@ -168,72 +175,14 @@ PeridigmNS::ElasticMaterial::computeForce(const double dt,
     dataManager.getData(m_partialStressFieldId, PeridigmField::STEP_NP1)->ExtractView(&partialStress);
 
   MATERIAL_EVALUATION::computeDilatation(x,y,weightedVolume,cellVolume,bondDamage,dilatation,neighborhoodList,numOwnedPoints,m_horizon,m_OMEGA,m_alpha,deltaTemperature);
-  MATERIAL_EVALUATION::computeInternalForceLinearElastic(x,y,weightedVolume,cellVolume,dilatation,bondDamage,force,partialStress,neighborhoodList,numOwnedPoints,m_bulkModulus,m_shearModulus,m_horizon,m_alpha,deltaTemperature);
+  
+#ifdef PERIDIGM_KOKKOS
+  MATERIAL_EVALUATION::computeInternalForceLinearElasticKokkos(x,y,weightedVolume,cellVolume,dilatation,bondDamage,scf,force,neighborhoodList,numOwnedPoints,m_bulkModulus,m_shearModulus,m_horizon,m_alpha,deltaTemperature);
+#else
+  MATERIAL_EVALUATION::computeInternalForceLinearElastic(x,y,weightedVolume,cellVolume,dilatation,bondDamage,force,partialStress,neighborhoodList,numOwnedPoints,m_bulkModulus,m_shearModulus,m_horizon,m_alpha,deltaTemperature, m_planeStrain, m_planeStress);
+#endif
 }
 
-void
-PeridigmNS::ElasticMaterial::computeStoredElasticEnergyDensity(const double dt,
-                                                               const int numOwnedPoints,
-                                                               const int* ownedIDs,
-                                                               const int* neighborhoodList,
-                                                               PeridigmNS::DataManager& dataManager) const
-{
-  // This function is intended to be called from a compute class.
-  // The compute class should have already created the Stored_Elastic_Energy_Density field id.
-  int storedElasticEnergyDensityFieldId = PeridigmNS::FieldManager::self().getFieldId("Stored_Elastic_Energy_Density");
-
-  double *x, *y, *cellVolume, *weightedVolume, *dilatation, *storedElasticEnergyDensity, *bondDamage;
-  dataManager.getData(m_modelCoordinatesFieldId, PeridigmField::STEP_NONE)->ExtractView(&x);
-  dataManager.getData(m_coordinatesFieldId, PeridigmField::STEP_NP1)->ExtractView(&y);
-  dataManager.getData(m_volumeFieldId, PeridigmField::STEP_NONE)->ExtractView(&cellVolume);
-  dataManager.getData(m_weightedVolumeFieldId, PeridigmField::STEP_NONE)->ExtractView(&weightedVolume);
-  dataManager.getData(m_dilatationFieldId, PeridigmField::STEP_NP1)->ExtractView(&dilatation);
-  dataManager.getData(m_bondDamageFieldId, PeridigmField::STEP_NP1)->ExtractView(&bondDamage);
-  dataManager.getData(storedElasticEnergyDensityFieldId, PeridigmField::STEP_NONE)->ExtractView(&storedElasticEnergyDensity);
-
-  double *deltaTemperature = NULL;
-  if(m_applyThermalStrains)
-    dataManager.getData(m_deltaTemperatureFieldId, PeridigmField::STEP_NP1)->ExtractView(&deltaTemperature);
-
-  int iID, iNID, numNeighbors, nodeId, neighborId;
-  double omega, nodeInitialX[3], nodeCurrentX[3];
-  double initialDistance, currentDistance, deviatoricExtension, neighborBondDamage;
-  double nodeDilatation, alpha, temp;
-
-  int neighborhoodListIndex(0), bondIndex(0);
-  for(iID=0 ; iID<numOwnedPoints ; ++iID){
-
-    nodeId = ownedIDs[iID];
-    nodeInitialX[0] = x[nodeId*3];
-    nodeInitialX[1] = x[nodeId*3+1];
-    nodeInitialX[2] = x[nodeId*3+2];
-    nodeCurrentX[0] = y[nodeId*3];
-    nodeCurrentX[1] = y[nodeId*3+1];
-    nodeCurrentX[2] = y[nodeId*3+2];
-    nodeDilatation = dilatation[nodeId];
-    alpha = 15.0*m_shearModulus/weightedVolume[nodeId];
-
-    temp = 0.0;
-
-    numNeighbors = neighborhoodList[neighborhoodListIndex++];
-    for(iNID=0 ; iNID<numNeighbors ; ++iNID){
-      neighborId = neighborhoodList[neighborhoodListIndex++];
-      neighborBondDamage = bondDamage[bondIndex++];
-      initialDistance =
-        distance(nodeInitialX[0], nodeInitialX[1], nodeInitialX[2],
-                 x[neighborId*3], x[neighborId*3+1], x[neighborId*3+2]);
-      currentDistance =
-        distance(nodeCurrentX[0], nodeCurrentX[1], nodeCurrentX[2],
-                 y[neighborId*3], y[neighborId*3+1], y[neighborId*3+2]);
-      if(m_applyThermalStrains)
-	currentDistance -= m_alpha*deltaTemperature[nodeId]*initialDistance;
-      deviatoricExtension = (currentDistance - initialDistance) - nodeDilatation*initialDistance/3.0;
-      omega=m_OMEGA(initialDistance,m_horizon);
-      temp += (1.0-neighborBondDamage)*omega*deviatoricExtension*deviatoricExtension*cellVolume[neighborId];
-    }
-    storedElasticEnergyDensity[nodeId] = 0.5*m_bulkModulus*nodeDilatation*nodeDilatation + 0.5*alpha*temp;
-  }
-}
 
 void
 PeridigmNS::ElasticMaterial::computeJacobian(const double dt,
@@ -366,7 +315,7 @@ PeridigmNS::ElasticMaterial::computeAutomaticDifferentiationJacobian(const doubl
     for(int row=0 ; row<numDof ; ++row){
       for(int col=0 ; col<numDof ; ++col){
 	value = force_AD[row].dx(col) * cellVolume[row/3];
-	TEUCHOS_TEST_FOR_EXCEPT_MSG(!std::isfinite(value), "**** NaN detected in ElasticMaterial::computeAutomaticDifferentiationJacobian().\n");
+	TEUCHOS_TEST_FOR_EXCEPT_MSG(!boost::math::isfinite(value), "**** NaN detected in ElasticMaterial::computeAutomaticDifferentiationJacobian().\n");
         scratchMatrix(row, col) = value;
       }
     }
@@ -380,4 +329,34 @@ PeridigmNS::ElasticMaterial::computeAutomaticDifferentiationJacobian(const doubl
     else // unknown jacobian type
       TEUCHOS_TEST_FOR_EXCEPT_MSG(true, "**** Unknown Jacobian Type\n");
   }
+}
+void
+PeridigmNS::ElasticMaterial::evalDilatation(const double dt,
+                                                               const int numOwnedPoints,
+                                                               const int* ownedIDs,
+                                                               const int* neighborhoodList,
+                                                               PeridigmNS::DataManager& dataManager) const
+{
+  double *x, *y, *cellVolume, *weightedVolume, *dilatation, *bondDamage, *damageModel, *deltaTemperature;
+  dataManager.getData(m_damageModelFieldId, PeridigmField::STEP_NP1)->ExtractView(&damageModel);
+  dataManager.getData(m_modelCoordinatesFieldId, PeridigmField::STEP_NONE)->ExtractView(&x);
+  dataManager.getData(m_coordinatesFieldId, PeridigmField::STEP_NP1)->ExtractView(&y);
+  dataManager.getData(m_volumeFieldId, PeridigmField::STEP_NONE)->ExtractView(&cellVolume);
+  dataManager.getData(m_weightedVolumeFieldId, PeridigmField::STEP_NONE)->ExtractView(&weightedVolume);
+  dataManager.getData(m_dilatationFieldId, PeridigmField::STEP_NP1)->ExtractView(&dilatation);
+  dataManager.getData(m_bondDamageFieldId, PeridigmField::STEP_NP1)->ExtractView(&bondDamage);
+  const double *m = weightedVolume;
+  int iID;
+  deltaTemperature = NULL;
+  if(m_applyThermalStrains)
+    dataManager.getData(m_deltaTemperatureFieldId, PeridigmField::STEP_NP1)->ExtractView(&deltaTemperature);
+
+  MATERIAL_EVALUATION::computeDilatation(x,y,weightedVolume,cellVolume,bondDamage,dilatation,neighborhoodList,numOwnedPoints,m_horizon,m_OMEGA,m_alpha,deltaTemperature);
+  for(iID=0 ; iID<numOwnedPoints ; ++iID, dilatation++, m++){
+        damageModel[3*iID]   = *dilatation;
+        damageModel[3*iID+1] = m_bulkModulus  / (*m);
+        damageModel[3*iID+2] = m_shearModulus / (*m);
+        *dilatation = 0.0;
+  }
+ 
 }

@@ -137,14 +137,6 @@ namespace PeridigmNS {
 		 const int* neighborhoodList,
                  PeridigmNS::DataManager& dataManager) const;
 
-    //! Compute stored elastic density energy.
-    virtual void
-    computeStoredElasticEnergyDensity(const double dt,
-                                      const int numOwnedPoints,
-                                      const int* ownedIDs,
-                                      const int* neighborhoodList,
-                                      PeridigmNS::DataManager& dataManager) const;
-
     //! Evaluate the jacobian.
     virtual void
     computeJacobian(const double dt,
@@ -164,6 +156,12 @@ namespace PeridigmNS {
                                             PeridigmNS::DataManager& dataManager,
                                             PeridigmNS::SerialMatrix& jacobian,
                                             PeridigmNS::Material::JacobianType jacobianType = PeridigmNS::Material::FULL_MATRIX) const;
+    virtual void
+    evalDilatation(const double dt,
+                   const int numOwnedPoints,
+                   const int* ownedIDs,
+                   const int* neighborhoodList,
+                   PeridigmNS::DataManager& dataManager) const;
 
   protected:
 	
@@ -183,10 +181,13 @@ namespace PeridigmNS {
     bool m_applyAutomaticDifferentiationJacobian;
     bool m_applyThermalStrains;
     bool m_computePartialStress;
+    bool m_planeStress;
+    bool m_planeStrain;
     PeridigmNS::InfluenceFunction::functionPointer m_OMEGA;
 
     // field spec ids for all relevant data
     std::vector<int> m_fieldIds;
+    int m_horizonFieldId;
     int m_volumeFieldId;
     int m_damageFieldId;
     int m_weightedVolumeFieldId;
@@ -196,8 +197,10 @@ namespace PeridigmNS {
     int m_forceDensityFieldId;
     int m_partialStressFieldId;
     int m_bondDamageFieldId;
-    int m_temperatureFieldId;
     int m_deltaTemperatureFieldId;
+    int m_storedElasticEnergyDensityFieldId;
+    int m_damageModelFieldId;
+
   };
 }
 

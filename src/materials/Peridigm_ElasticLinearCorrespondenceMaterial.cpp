@@ -124,27 +124,27 @@ PeridigmNS::ElasticLinearCorrespondenceMaterial::ElasticLinearCorrespondenceMate
        m_bulkModulus = calculateBulkModulus(params);
        m_shearModulus = calculateShearModulus(params);
   
-       C11 = 2*m_shearModulus + m_bulkModulus;
-       C44 = m_shearModulus;
-       C55 = m_shearModulus;
-       C66 = m_shearModulus;
-       C12 = C11 - 2*C55;
-       C13 = C12;
-       C14 = 0.0;
-       C15 = 0.0;
-       C16 = 0.0;
-       C22 = 2*m_shearModulus + m_bulkModulus;
-       C33 = 2*m_shearModulus + m_bulkModulus;
-       C23 = C12;
-       C24 = 0.0;
-       C25 = 0.0;
-       C26 = 0.0;
-       C34 = 0.0;
-       C35 = 0.0;
-       C36 = 0.0;
-       C45 = 0.0;
-       C46 = 0.0;
-       C56 = 0.0;
+            C11 = (4*m_shearModulus*(3*m_bulkModulus + m_shearModulus))/(3*m_bulkModulus + 4*m_shearModulus);
+            C44 = m_shearModulus;
+            C55 = m_shearModulus;
+            C66 = m_shearModulus;
+            C12 = (2*(3*m_bulkModulus - 2*m_shearModulus)*m_shearModulus)/(3*m_bulkModulus + 4*m_shearModulus);
+            C13 = C12;
+            C14 = 0.0;
+            C15 = 0.0;
+            C16 = 0.0;
+            C22 = C11;
+            C33 = C11;
+            C23 = C12;
+            C24 = 0.0;
+            C25 = 0.0;
+            C26 = 0.0;
+            C34 = 0.0;
+            C35 = 0.0;
+            C36 = 0.0;
+            C45 = 0.0;
+            C46 = 0.0;
+            C56 = 0.0;
   }
 // Equation (8) Dipasquale, D., Sarego, G., Zaccariotto, M., Galvanetto, U., A discussion on failure criteria
   // for ordinary state-based Peridynamics, Engineering Fracture Mechanics (2017), doi: https://doi.org/10.1016/
@@ -162,8 +162,8 @@ PeridigmNS::ElasticLinearCorrespondenceMaterial::ElasticLinearCorrespondenceMate
   // tbd in future
   if (m_planeStress==true){
       //only transversal isotropic in the moment
-   C[0]  = C11-C13*C13/C22;C[1]  = C12-C13*C23/C22;C[2]  = 0.0; C[3]  = 0.0; C[4]  = 0.0; C[5]  = 0.0;
-   C[6]  = C12-C13*C23/C22;C[7]  = C22-C13*C23/C22;C[8]  = 0.0; C[9]  = 0.0; C[10] = 0.0; C[11] = 0.0;
+   C[0]  = C11-C13*C13/C33;C[1]  = C12-C13*C23/C33;C[2]  = 0.0; C[3]  = 0.0; C[4]  = 0.0; C[5]  = 0.0;
+   C[6]  = C12-C13*C23/C33;C[7]  = C22-C23*C23/C33;C[8]  = 0.0; C[9]  = 0.0; C[10] = 0.0; C[11] = 0.0;
    C[12] = 0.0;C[13] = 0.0;C[14] = 0.0; C[15] = 0.0; C[16] = 0.0; C[17] = 0.0;
    C[18] = 0.0;C[19] = 0.0;C[20] = 0.0; C[21] = 0.0; C[22] = 0.0; C[23] = 0.0;
    C[24] = 0.0;C[25] = 0.0;C[26] = 0.0; C[27] = 0.0; C[28] = 0.0; C[29] = 0.0;
@@ -172,7 +172,7 @@ PeridigmNS::ElasticLinearCorrespondenceMaterial::ElasticLinearCorrespondenceMate
 
   }
   // not correct for plane stress!!!
-  if (m_planeStrain==true | m_planeStress==true){
+  if (m_planeStrain==true){
    C[0]  = C11;C[1]  = C12;C[2]  = 0.0; C[3]  = 0.0; C[4]  = 0.0; C[5]  = C16;
    C[6]  = C12;C[7]  = C22;C[8]  = 0.0; C[9]  = 0.0; C[10] = 0.0; C[11] = C26;
    C[12] = 0.0;C[13] = 0.0;C[14] = 0.0; C[15] = 0.0; C[16] = 0.0; C[17] = 0.0;
